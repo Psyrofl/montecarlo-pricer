@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="montecarlo-pricer/montecarlo-pricer.vcxproj" Id="d0fa2735-1eb9-4a36-b5e6-14e8b327f072" />
+</Solution>
