@@ -191,6 +191,37 @@ MCResult monteCarloCallAntithetic(double S0, double K, double r, double sigma, d
     return MCResult{ mean, s };
 }
 
+double estimateBeta(double S0, double K, double r, double sigma, double T, int numPilot, unsigned seed)
+{
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> normal(0.0, 1.0);
+
+    double sumX = 0;
+    double sumY = 0;
+    double sumXX = 0;
+    double sumXY = 0;
+
+
+    double discount = std::exp(-r * T);
+
+    for (int i = 0; i < numPilot; i++)
+    {
+        double Z = normal(rng);
+        double S_T = S0 * std::exp((r - sigma * sigma / 2) * T + sigma * std::sqrt(T) * Z);
+        double payoff = std::max(S_T - K, 0.0);
+        double stockavg = std::exp(-r * T) * S_T;
+        double discounted = discount * payoff;
+        sumX += stockavg;
+        sumY += discounted;
+        sumXY += stockavg * discounted;
+        sumXX += stockavg * stockavg;
+    }
+
+    double covXY = sumXY / numPilot - (sumX / numPilot) * (sumY / numPilot);
+    double varX = sumXX / numPilot - (sumX / numPilot) * (sumX / numPilot);
+    double beta = covXY / varX;
+    return beta;
+}
 
 
 int main()
@@ -237,6 +268,8 @@ int main()
     std::cout << "\nStandard:   " << standard.price << " +/- " << standard.standardError << "\n";
     std::cout << "Antithetic: " << antithetic.price << " +/- " << antithetic.standardError << "\n";
     std::cout << "Variance reduction factor: " << ratio * ratio << "\n";
+
+    std::cout << "beta: " << estimateBeta(100, 100, 0.05, 0.2, 1, 100000, 1000) << "\n";
   
     return 0;
 }
