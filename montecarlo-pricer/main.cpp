@@ -85,6 +85,35 @@ void simulatePaths(double S0, double K, double r, double sigma, double T, int nu
    
 }
 
+void simulatePathsAntithetic(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, ThreadTotals& out)
+{
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> normal(0.0, 1.0);
+
+    double sum = 0;
+    double sumSquared = 0;
+
+    double discount = std::exp(-r * T);
+
+    for (int i = 0; i < numPaths; i++)
+    {
+        double Z = normal(rng);
+        double S_T = S0 * std::exp((r - sigma * sigma / 2) * T + sigma * std::sqrt(T) * Z);
+        double payoff = std::max(S_T - K, 0.0);
+        double S_T_2 = S0 * std::exp((r - sigma * sigma / 2) * T + sigma * std::sqrt(T) * -Z);
+        double payoff2 = std::max(S_T_2 - K, 0.0);
+        double payoffavg = (payoff + payoff2) / 2;
+        double discounted = discount * payoffavg;
+        sum += discounted;
+        sumSquared += discounted * discounted;
+
+    }
+
+    out.sum = sum;
+    out.sumSquared = sumSquared;
+
+}
+
 MCResult monteCarloCallParallel(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads)
 {
     std::vector<ThreadTotals> totals(numThreads);
@@ -120,6 +149,45 @@ MCResult monteCarloCallParallel(double S0, double K, double r, double sigma, dou
     double variance = (sumSquared / numPaths) - mean * mean;
 
     double s = std::sqrt(variance) / std::sqrt(numPaths);
+    return MCResult{ mean, s };
+}
+
+MCResult monteCarloCallAntithetic(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads)
+{
+    std::vector<ThreadTotals> totals(numThreads);
+    std::vector<std::thread> threads;
+    int numPairs = numPaths / 2;
+    int pathsPerThread = numPairs / numThreads;
+    double sum = 0;
+    double sumSquared = 0;
+
+    for (int i = 0; i < numThreads; i++)
+    {
+        int pathsForThisThread = pathsPerThread;
+
+        if (i == numThreads - 1)
+        {
+            pathsForThisThread = numPairs - pathsPerThread * (numThreads - 1);
+        }
+
+        threads.push_back(std::thread(simulatePathsAntithetic, S0, K, r, sigma, T, pathsForThisThread, 42 + i, std::ref(totals[i])));
+    }
+
+    for (std::thread& t : threads)
+    {
+        t.join();
+    }
+
+    for (int i = 0; i < totals.size(); i++)
+    {
+        sum += totals[i].sum;
+        sumSquared += totals[i].sumSquared;
+    }
+
+    double mean = sum / numPairs;
+    double variance = (sumSquared / numPairs) - mean * mean;
+
+    double s = std::sqrt(variance) / std::sqrt(numPairs);
     return MCResult{ mean, s };
 }
 
@@ -161,6 +229,14 @@ int main()
             << std::setw(12) << result.price
             << std::setw(12) << result.standardError << "\n";
     }
+
+    MCResult standard = monteCarloCallParallel(100, 100, 0.05, 0.2, 1, paths, 16);
+    MCResult antithetic = monteCarloCallAntithetic(100, 100, 0.05, 0.2, 1, paths, 16);
+    double ratio = standard.standardError / antithetic.standardError;
+
+    std::cout << "\nStandard:   " << standard.price << " +/- " << standard.standardError << "\n";
+    std::cout << "Antithetic: " << antithetic.price << " +/- " << antithetic.standardError << "\n";
+    std::cout << "Variance reduction factor: " << ratio * ratio << "\n";
   
     return 0;
 }
