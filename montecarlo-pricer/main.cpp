@@ -20,15 +20,17 @@ struct MCResult
 };
 
 double normalCDF(double x);
+double estimateBeta(double S0, double K, double r, double sigma, double T, int numPilot, unsigned seed);
 double blackScholesCall(double S0, double K, double r, double sigma, double T);
 MCResult monteCarloCall(double S0, double K, double r, double sigma, double T, int numPaths);
 void simulatePaths(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, ThreadTotals& out);
 void simulatePathsAntithetic(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, ThreadTotals& out);
 void simulatePathsControl(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, double beta, ThreadTotals& out);
+void simulatePathsAsian(double S0, double K, double r, double sigma, double T, int numPaths, int numSteps, unsigned seed, ThreadTotals& out);
 MCResult monteCarloCallParallel(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads);
 MCResult monteCarloCallAntithetic(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads);
-double estimateBeta(double S0, double K, double r, double sigma, double T, int numPilot, unsigned seed);
 MCResult monteCarloCallControl(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads);
+MCResult monteCarloCallAsian(double S0, double K, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
 
 
 int main()
@@ -71,6 +73,8 @@ int main()
     MCResult standard = monteCarloCallParallel(100, 100, 0.05, 0.2, 1, paths, 16);
     MCResult antithetic = monteCarloCallAntithetic(100, 100, 0.05, 0.2, 1, paths, 16);
     MCResult control = monteCarloCallControl(100, 100, 0.05, 0.2, 1, paths, 16);
+    MCResult asian1 = monteCarloCallAsian(100, 100, 0.05, 0.2, 1, 1000000, 1, 16);
+    MCResult asian252 = monteCarloCallAsian(100, 100, 0.05, 0.2, 1, 1000000, 252, 16);
 
     double antitheticRatio = standard.standardError / antithetic.standardError;
     double controlRatio = standard.standardError / control.standardError;
@@ -79,7 +83,8 @@ int main()
     std::cout << "Standard:   " << standard.price << " +/- " << standard.standardError << "\n";
     std::cout << "Antithetic: " << antithetic.price << " +/- " << antithetic.standardError << "  factor " << antitheticRatio * antitheticRatio << "\n";
     std::cout << "Control:    " << control.price << " +/- " << control.standardError << "  factor " << controlRatio * controlRatio << "\n";
-  
+    std::cout << "Asian, 1 step:    " << asian1.price << " +/- " << 1.96 * asian1.standardError << "\n";
+    std::cout << "Asian, 252 steps: " << asian252.price << " +/- " << 1.96 * asian252.standardError << "\n";
     return 0;
 }
 
@@ -272,6 +277,46 @@ MCResult monteCarloCallControl(double S0, double K, double r, double sigma, doub
     return MCResult{ mean, s };
 }
 
+MCResult monteCarloCallAsian(double S0, double K, double r, double sigma, double T, int numPaths, int numSteps, int numThreads)
+{
+    {
+        std::vector<ThreadTotals> totals(numThreads);
+        std::vector<std::thread> threads;
+        int pathsPerThread = numPaths / numThreads;
+        double sum = 0;
+        double sumSquared = 0;
+
+        for (int i = 0; i < numThreads; i++)
+        {
+            int pathsForThisThread = pathsPerThread;
+
+            if (i == numThreads - 1)
+            {
+                pathsForThisThread = numPaths - pathsPerThread * (numThreads - 1);
+            }
+
+            threads.push_back(std::thread(simulatePathsAsian, S0, K, r, sigma, T, pathsForThisThread, numSteps, 42 + i, std::ref(totals[i])));
+        }
+
+        for (std::thread& t : threads)
+        {
+            t.join();
+        }
+
+        for (int i = 0; i < totals.size(); i++)
+        {
+            sum += totals[i].sum;
+            sumSquared += totals[i].sumSquared;
+        }
+
+        double mean = sum / numPaths;
+        double variance = (sumSquared / numPaths) - mean * mean;
+
+        double s = std::sqrt(variance) / std::sqrt(numPaths);
+        return MCResult{ mean, s };
+    }
+}
+
 void simulatePaths(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, ThreadTotals& out)
 {
     std::mt19937 rng(seed);
@@ -353,6 +398,34 @@ void simulatePathsControl(double S0, double K, double r, double sigma, double T,
     out.sum = sum;
     out.sumSquared = sumSquared;
 
+}
+
+void simulatePathsAsian(double S0, double K, double r, double sigma, double T, int numPaths, int numSteps, unsigned seed, ThreadTotals& out)
+{
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> normal(0.0, 1.0);
+
+    double discount = std::exp(-r * T);
+    double dt = T / numSteps;
+
+    for (int i = 0; i < numPaths; i++)
+    {
+        double S = S0;
+        double priceSum = 0;
+
+        for (int step = 0; step < numSteps; step++)
+        {
+            double Z = normal(rng);
+            S = S * exp((r - sigma * sigma / 2) * dt + sigma * std::sqrt(dt) * Z);
+            priceSum += S;
+            
+        }
+        double average = priceSum / numSteps;
+        double payoff = std::max(average - K, 0.0);
+        double discounted = discount * payoff;
+        out.sum += discounted;
+        out.sumSquared += discounted * discounted;
+    }
 }
 
 
