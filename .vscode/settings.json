@@ -1,0 +1,7 @@
+{
+    "code-runner.runInTerminal": true,
+    "code-runner.saveFileBeforeRun": true,
+    "code-runner.executorMap": {
+        "cpp": "cd \"$workspaceRoot/montecarlo-pricer\" && clang++ -std=c++20 -O2 -Wall *.cpp -o pricer && ./pricer"
+    }
+}
