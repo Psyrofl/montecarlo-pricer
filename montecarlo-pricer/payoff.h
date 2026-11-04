@@ -73,4 +73,31 @@ public:
 private:
     double K;
     double barrier;
+
+};
+
+class LookbackPayoff : public Payoff
+{
+public:
+    LookbackPayoff(double K) : K(K) {}
+
+    double calculate(const std::vector<double>& path) const override
+    {
+        double highest = path[0];
+        double priceSum = 0;
+        for (double S : path)
+        {
+            priceSum += S;
+            if (S > highest)
+            {
+                highest = S;
+            }
+        }
+
+        return std::max(highest - K, 0.0);
+    }
+
+private:
+    double K;
+
 };

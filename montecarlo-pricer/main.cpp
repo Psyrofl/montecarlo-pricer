@@ -99,6 +99,12 @@ int main()
         std::cout << "Barrier " << barrier << ": " << result.price << " +/- " << result.standardError << "\n";
     }
 
+    LookbackPayoff lookback(100);
+    MCResult lookback1 = monteCarloPrice(lookback, 100, 0.05, 0.2, 1, 1000000, 1, 16);
+    MCResult lookback252 = monteCarloPrice(lookback, 100, 0.05, 0.2, 1, 1000000, 252, 16);
+    std::cout << "Lookback, 1 step:    " << lookback1.price << " +/- " << lookback1.standardError << "\n";
+    std::cout << "Lookback, 252 steps: " << lookback252.price << " +/- " << lookback252.standardError << "\n";
+
     return 0;
 }
 
