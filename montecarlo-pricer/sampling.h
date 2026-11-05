@@ -1,5 +1,7 @@
 #pragma once
 #include <cmath>
+#include <vector>
+#include <cstdint>
 
 inline double halton(int index, int base)
 {
@@ -48,4 +50,43 @@ inline double inverseNormalCDF(double u)
     double r = q * q;
     return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
         (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+
+inline std::vector<int> firstPrimes(int n)
+{
+    std::vector<int> primes;
+    int candidate = 2;
+
+    while (primes.size() < n)
+    {
+        bool isPrime = true;
+        for (int i = 2; i * i <= candidate; i++)
+        {
+            if (candidate % i == 0)
+            {
+                isPrime = false;
+                break;
+            }     
+        }
+
+        if (isPrime)
+        {
+            primes.push_back(candidate);
+        }
+
+        candidate++;
+    }
+    return primes;
+    
+}
+
+inline double pixelOffset(uint32_t pixel, uint32_t dimension)
+{
+    uint32_t h = pixel * 73856093u ^ dimension * 19349663u;
+    h ^= h >> 16;
+    h *= 0x7feb352du;
+    h ^= h >> 15;
+    h *= 0x846ca68bu;
+    h ^= h >> 16;
+    return h / 4294967296.0;
 }

@@ -29,11 +29,14 @@ void simulatePaths(double S0, double K, double r, double sigma, double T, int nu
 void simulatePathsAntithetic(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, ThreadTotals& out);
 void simulatePathsControl(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, double beta, ThreadTotals& out);
 void simulatePathsGeneric(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, unsigned seed, ThreadTotals& out);
+void simulatePathsHalton(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int startIndex, const std::vector<int>& bases, ThreadTotals& out);
 MCResult monteCarloCallParallel(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads);
 MCResult monteCarloCallAntithetic(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads);
 MCResult monteCarloCallControl(double S0, double K, double r, double sigma, double T, int numPaths, int numThreads);
-MCResult monteCarloPrice(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
 MCResult monteCarloCallHalton(double S0, double K, double r, double sigma, double T, int numPaths);
+MCResult monteCarloPrice(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
+MCResult monteCarloPriceHalton(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
+
 
 
 
@@ -125,6 +128,21 @@ int main()
         MCResult random = monteCarloCall(100, 100, 0.05, 0.2, 1, N);
         MCResult halton = monteCarloCallHalton(100, 100, 0.05, 0.2, 1, N);
         std::cout << std::setw(12) << N
+            << std::setw(16) << std::abs(random.price - exact)
+            << std::setw(16) << std::abs(halton.price - exact) << "\n";
+    }
+
+    std::vector<int> p = firstPrimes(252);
+    for (int i = 0; i < 10; i++) std::cout << p[i] << " ";
+    std::cout << "... " << p.back() << "\n";
+
+    std::cout << "\n" << std::setw(6) << "Steps" << std::setw(16) << "Random error" << std::setw(16) << "Halton error" << "\n";
+    VanillaPayoff vanilla(100);
+    for (int steps : {1, 12, 52, 252})
+    {
+        MCResult random = monteCarloPrice(vanilla, 100, 0.05, 0.2, 1, 100000, steps, 16);
+        MCResult halton = monteCarloPriceHalton(vanilla, 100, 0.05, 0.2, 1, 100000, steps, 16);
+        std::cout << std::setw(6) << steps
             << std::setw(16) << std::abs(random.price - exact)
             << std::setw(16) << std::abs(halton.price - exact) << "\n";
     }
@@ -321,8 +339,28 @@ MCResult monteCarloCallControl(double S0, double K, double r, double sigma, doub
     return MCResult{ mean, s };
 }
 
+MCResult monteCarloCallHalton(double S0, double K, double r, double sigma, double T, int numPaths)
+{
+    double sum = 0;
+    double sumSquared = 0;
+    double discount = std::exp(-r * T);
 
+    for (int i = 0; i < numPaths; i++)
+    {
+        double Z = inverseNormalCDF(halton(i + 1, 2));
+        double S_T = S0 * std::exp((r - sigma * sigma / 2) * T + sigma * std::sqrt(T) * Z);
+        double payoff = std::max(S_T - K, 0.0);
+        double discounted = discount * payoff;
+        sum += discounted;
+        sumSquared += discounted * discounted;
 
+    }
+
+    double mean = sum / numPaths;
+    double variance = (sumSquared / numPaths) - mean * mean;
+    double s = std::sqrt(variance) / std::sqrt(numPaths);
+    return MCResult{ mean, s };
+}
 
 void simulatePaths(double S0, double K, double r, double sigma, double T, int numPaths, unsigned seed, ThreadTotals& out)
 {
@@ -437,6 +475,40 @@ void simulatePathsGeneric(const Payoff& payoff, double S0, double r, double sigm
 
 }
 
+
+
+void simulatePathsHalton(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int startIndex, const std::vector<int>& bases, ThreadTotals& out)
+{
+    double discount = std::exp(-r * T);
+    double dt = T / numSteps;
+    double sum = 0;
+    double sumSquared = 0;
+    std::vector<double> path(numSteps);
+    for (int i = 0; i < numPaths; i++)
+    {
+        double S = S0;
+        for (int step = 0; step < numSteps; step++)
+        {
+            double u = halton(startIndex + i, bases[step]) + pixelOffset(step, 0);
+            if (u >= 1.0)
+            {
+                u -= 1.0;
+            }
+
+            double Z = inverseNormalCDF(u);
+            S = S * std::exp((r - sigma * sigma / 2) * dt + sigma * std::sqrt(dt) * Z);
+            path[step] = S;
+
+        }
+        double discounted = payoff.calculate(path) * discount;
+        sum += discounted;
+        sumSquared += discounted * discounted;
+    }
+
+    out.sum = sum;
+    out.sumSquared += sumSquared;
+}
+
 MCResult monteCarloPrice(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads)
 {
 
@@ -476,25 +548,42 @@ MCResult monteCarloPrice(const Payoff& payoff, double S0, double r, double sigma
     return MCResult{ mean, s };
 }
 
-MCResult monteCarloCallHalton(double S0, double K, double r, double sigma, double T, int numPaths)
+MCResult monteCarloPriceHalton(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads)
 {
+    std::vector<int> bases = firstPrimes(numSteps);
+    std::vector<ThreadTotals> totals(numThreads);
+    std::vector<std::thread> threads;
+    int pathsPerThread = numPaths / numThreads;
     double sum = 0;
     double sumSquared = 0;
-    double discount = std::exp(-r * T);
 
-    for (int i = 0; i < numPaths; i++)
+    for (int i = 0; i < numThreads; i++)
     {
-        double Z = inverseNormalCDF(halton(i + 1, 2));
-        double S_T = S0 * std::exp((r - sigma * sigma / 2) * T + sigma * std::sqrt(T) * Z);
-        double payoff = std::max(S_T - K, 0.0);
-        double discounted = discount * payoff;
-        sum += discounted;
-        sumSquared += discounted * discounted;
+        int pathsForThisThread = pathsPerThread;
 
+        if (i == numThreads - 1)
+        {
+            pathsForThisThread = numPaths - pathsPerThread * (numThreads - 1);
+        }
+
+        int startIndex = 1 + i * pathsPerThread;
+        threads.push_back(std::thread(simulatePathsHalton, std::cref(payoff), S0, r, sigma, T, pathsForThisThread, numSteps, startIndex, std::cref(bases), std::ref(totals[i])));
+    }
+
+    for (std::thread& t : threads)
+    {
+        t.join();
+    }
+
+    for (int i = 0; i < totals.size(); i++)
+    {
+        sum += totals[i].sum;
+        sumSquared += totals[i].sumSquared;
     }
 
     double mean = sum / numPaths;
     double variance = (sumSquared / numPaths) - mean * mean;
+
     double s = std::sqrt(variance) / std::sqrt(numPaths);
     return MCResult{ mean, s };
 }
