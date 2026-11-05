@@ -52,18 +52,12 @@ public:
 
     double calculate(const std::vector<double>& path) const override
     {
-        double priceSum = 0;
         for (double S : path)
         {
             if (S >= barrier)
             {
                 return 0.0;
             }
-            else
-            { 
-                priceSum += S;
-            }
-
         }
 
         return std::max(path.back() - K, 0.0);
@@ -84,10 +78,8 @@ public:
     double calculate(const std::vector<double>& path) const override
     {
         double highest = path[0];
-        double priceSum = 0;
         for (double S : path)
         {
-            priceSum += S;
             if (S > highest)
             {
                 highest = S;
