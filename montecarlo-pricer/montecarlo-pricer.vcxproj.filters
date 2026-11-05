@@ -21,6 +21,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.gitignore" />
+    <None Include="spx_calls.csv" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="payoff.h">

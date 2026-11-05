@@ -6,6 +6,9 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include "payoff.h"
 #include "sampling.h"
 
@@ -36,7 +39,8 @@ MCResult monteCarloCallControl(double S0, double K, double r, double sigma, doub
 MCResult monteCarloCallHalton(double S0, double K, double r, double sigma, double T, int numPaths);
 MCResult monteCarloPrice(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
 MCResult monteCarloPriceHalton(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
-
+double impliedVol(double marketPrice, double S0, double K, double r, double T);
+void impliedVolTable(const std::string& filename, double S0, double r, double T);
 
 
 
@@ -146,6 +150,14 @@ int main()
             << std::setw(16) << std::abs(random.price - exact)
             << std::setw(16) << std::abs(halton.price - exact) << "\n";
     }
+
+    for (double sigma : {0.1, 0.2, 0.35, 0.6})
+    {
+        double price = blackScholesCall(100, 100, 0.05, sigma, 1);
+        std::cout << sigma << " -> " << impliedVol(price, 100, 100, 0.05, 1) << "\n";
+    }
+
+    impliedVolTable("spx_calls.csv", 7688.62, 0.0413, 64.0 / 365);
 
     return 0;
 }
@@ -586,4 +598,61 @@ MCResult monteCarloPriceHalton(const Payoff& payoff, double S0, double r, double
 
     double s = std::sqrt(variance) / std::sqrt(numPaths);
     return MCResult{ mean, s };
+}
+
+double impliedVol(double marketPrice, double S0, double K, double r, double T)
+{
+    double low = 0.01;
+    double high = 3.0;
+    double mid = 0;
+
+    while ((high - low) > 1e-8)
+    {
+        mid = (low + high) / 2;
+        if (blackScholesCall(S0, K, r, mid, T) > marketPrice)
+        {
+            high = mid;
+        }
+        else
+        {
+            low = mid;
+        }
+    }
+    return mid;
+}
+
+void impliedVolTable(const std::string& filename, double S0, double r, double T)
+{
+    std::ifstream file(filename);
+    if (!file)
+    {
+        std::cout << "Could not open " << filename << "\n";
+        return;
+    }
+    std::string line;
+    std::getline(file, line);              
+
+    std::cout << std::setw(10) << "Strike" << std::setw(12) << "Mid" << std::setw(12) << "IV" << "\n";
+
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string field;
+
+        std::getline(ss, field, ',');
+        double strike = std::stod(field);
+
+        std::getline(ss, field, ',');
+        double bid = std::stod(field);
+
+        std::getline(ss, field, ',');
+        double ask = std::stod(field);
+
+        double mid = (bid + ask) / 2;
+        double iv = impliedVol(mid, S0, strike, r, T);
+        std::cout << std::setw(10) << strike
+            << std::setw(12) << mid
+            << std::setw(12) << iv << "\n";
+
+    }
 }
