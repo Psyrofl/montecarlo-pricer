@@ -26,5 +26,8 @@
     <ClInclude Include="payoff.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="sampling.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

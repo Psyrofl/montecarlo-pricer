@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include "payoff.h"
+#include "sampling.h"
 
 struct ThreadTotals
 {
@@ -75,7 +76,7 @@ int main()
     MCResult antithetic = monteCarloCallAntithetic(100, 100, 0.05, 0.2, 1, paths, 16);
     MCResult control = monteCarloCallControl(100, 100, 0.05, 0.2, 1, paths, 16);
    
-
+     
     double antitheticRatio = standard.standardError / antithetic.standardError;
     double controlRatio = standard.standardError / control.standardError;
 
@@ -104,6 +105,17 @@ int main()
     MCResult lookback252 = monteCarloPrice(lookback, 100, 0.05, 0.2, 1, 1000000, 252, 16);
     std::cout << "Lookback, 1 step:    " << lookback1.price << " +/- " << lookback1.standardError << "\n";
     std::cout << "Lookback, 252 steps: " << lookback252.price << " +/- " << lookback252.standardError << "\n";
+
+
+    for (int i = 1; i <= 8; i++)
+    {
+        std::cout << halton(i, 2) << " ";
+    }
+
+    for (double Z : {-3.0, -1.0, 0.0, 0.5, 2.0})
+    {
+        std::cout << Z << " -> " << inverseNormalCDF(normalCDF(Z)) << "\n";
+    }
 
     return 0;
 }
