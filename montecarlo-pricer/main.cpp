@@ -9,6 +9,8 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <limits>
+#include <numbers>
 #include "payoff.h"
 #include "sampling.h"
 
@@ -40,7 +42,8 @@ MCResult monteCarloCallHalton(double S0, double K, double r, double sigma, doubl
 MCResult monteCarloPrice(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
 MCResult monteCarloPriceHalton(const Payoff& payoff, double S0, double r, double sigma, double T, int numPaths, int numSteps, int numThreads);
 double impliedVol(double marketPrice, double S0, double K, double r, double T);
-void impliedVolTable(const std::string& filename, double S0, double r, double T);
+void impliedVolTable(const std::string& filename, double S0, double r, double T, std::vector<double>& strikes, std::vector<double>& vols);
+double interpolateVol(double K, const std::vector<double>& strikes, const std::vector<double>& vols);
 
 
 
@@ -157,7 +160,22 @@ int main()
         std::cout << sigma << " -> " << impliedVol(price, 100, 100, 0.05, 1) << "\n";
     }
 
-    impliedVolTable("spx_calls.csv", 7688.62, 0.0413, 64.0 / 365);
+    double S0 = 7688.62, r = 0.0413, T = 64.0 / 365;
+    std::vector<double> strikes, vols;
+    impliedVolTable("spx_calls.csv", S0, r, T, strikes, vols);
+
+    double K = 7650;
+    double marketMid = 238.25;
+    double skewVol = interpolateVol(K, strikes, vols);
+    double flatVol = interpolateVol(7700, strikes, vols);
+
+    VanillaPayoff call7650(K);
+    MCResult skewMC = monteCarloPrice(call7650, S0, r, skewVol, T, 1000000, 1, 16);
+
+    std::cout << "\nStrike 7650, market mid " << marketMid << "\n";
+    std::cout << "Skew vol " << skewVol << ":  BS " << blackScholesCall(S0, K, r, skewVol, T)
+        << "  MC " << skewMC.price << " +/- " << skewMC.standardError << "\n";
+    std::cout << "Flat vol " << flatVol << ":  BS " << blackScholesCall(S0, K, r, flatVol, T) << "\n";
 
     return 0;
 }
@@ -621,7 +639,7 @@ double impliedVol(double marketPrice, double S0, double K, double r, double T)
     return mid;
 }
 
-void impliedVolTable(const std::string& filename, double S0, double r, double T)
+void impliedVolTable(const std::string& filename, double S0, double r, double T, std::vector<double>& strikes, std::vector<double>& vols) 
 {
     std::ifstream file(filename);
     if (!file)
@@ -650,9 +668,31 @@ void impliedVolTable(const std::string& filename, double S0, double r, double T)
 
         double mid = (bid + ask) / 2;
         double iv = impliedVol(mid, S0, strike, r, T);
+        strikes.push_back(strike);
+        vols.push_back(iv);
         std::cout << std::setw(10) << strike
             << std::setw(12) << mid
             << std::setw(12) << iv << "\n";
 
     }
+}
+
+double interpolateVol(double K, const std::vector<double>& strikes, const std::vector<double>& vols)
+{
+    for (int i = 0; i < strikes.size() - 1; i++)
+    {
+        if (K >= strikes[i] && K <= strikes[i + 1])
+        {
+            double t = (K - strikes[i]) / (strikes[i+1] - strikes[i]);
+            return vols[i] + t * (vols[i + 1] - vols[i]);
+        }
+
+    }  
+
+    if (K < strikes[0])
+    {
+        return vols[0];
+    }
+    return vols.back();
+
 }
